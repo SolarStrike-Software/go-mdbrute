@@ -1,23 +1,32 @@
 package main
 
 import (
-	"fmt"
 	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-const MODULE_BASE_ADDRESS uint32 = 0x400000
+const MODULE_BASE_ADDRESS uint32 = 0x400000 // Where Client.exe starts
 const MEMDATABASE_OFFSET uint32 = 0xd4
 const LOWEST_BRANCH uint32 = 0x6c
 const HIGHEST_BRANCH uint32 = 0x348
-const BRANCH_SIZE uint32 = 999
+const BRANCH_SIZE uint32 = 999 // Each "branch" contains exactly 1,000 items (0-999)
 const BRANCH_ITEM_NAME_OFFSET = 0xc
+
+/* In order to verify correctness, we check for the normal, default
+ * "Attack" skill, which has a known ID and will be one of a
+ * handful of strings (client language support).
+ */
 const SEARCH_ITEM_ID uint32 = 540000
 
 var SEARCH_ITEM_ALLOWED_NAMES = []string{"Attack", "Angreifen", "Ataque", "Attaque", "Atak"}
 
+/* BranchItemInfo - a  struct from Runes of Magic's client
+ * The memory DB in RoM contains an array of these structs.
+ * Each (valid) entry would contain a branch ID (array index)
+ * and the address in the game client to that branch.
+ */
 type BranchItemInfo struct {
 	_        uint32
 	branchId uint32
@@ -27,18 +36,10 @@ type BranchItemInfo struct {
 	_        uint32
 }
 
-func Work(handle windows.Handle, procId uint32, chunkStart uint32, chunkEnd uint32) (uint32, error) {
-	fmt.Printf("Scanning range 0x%X -> 0x%X\n", chunkStart, chunkEnd)
-	/*handle, err := windows.OpenProcess(PROCESS_ALL_ACCESS, false, procId)
-	defer windows.CloseHandle(handle)
-
-	if err != nil {
-		return 0, err
-	}*/
-
+func Scan(handle windows.Handle, procId uint32, chunkStart uint32, chunkEnd uint32) (uint32, error) {
 	count := (chunkEnd-chunkStart)/4 + 4
 
-	branchListPtrs, err := getBranchListPtrs(handle, 0x400000+chunkStart, count)
+	branchListPtrs, err := getBranchListPtrs(handle, MODULE_BASE_ADDRESS+chunkStart, count)
 	if err != nil {
 		return 0, err
 	}
@@ -49,7 +50,7 @@ func Work(handle windows.Handle, procId uint32, chunkStart uint32, chunkEnd uint
 		}
 
 		var branchListAddress uint32
-		err := ReadProcessValue(handle, branchListPtr+MEMDATABASE_OFFSET, &branchListAddress)
+		err := ReadProcessSimpleValue(handle, branchListPtr+MEMDATABASE_OFFSET, &branchListAddress)
 
 		if err != nil || branchListAddress == 0 || branchListAddress == 1 {
 			continue
@@ -64,12 +65,12 @@ func Work(handle windows.Handle, procId uint32, chunkStart uint32, chunkEnd uint
 		}
 	}
 
-	return 0, nil //fmt.Errorf("could not find memdb address in chunk")
+	return 0, nil
 }
 
 func scanBranch(handle windows.Handle, branchListAddress uint32, branch uint32) bool {
 	var branchAddress uint32
-	err := ReadProcessValue(handle, branchListAddress+branch, &branchAddress)
+	err := ReadProcessSimpleValue(handle, branchListAddress+branch, &branchAddress)
 	if err != nil || branchAddress == 0 || branchAddress == 0xFFFFFFFF {
 		return false
 	}
@@ -83,21 +84,21 @@ func scanBranch(handle windows.Handle, branchListAddress uint32, branch uint32) 
 	}
 
 	for index, branchItemInfo := range branchItemInfos {
-		// Read branch ID doesn't match expectations or address is invalid, so skip attempting this one
+		// Read branch ID (index) doesn't match expectations or address is invalid, so skip attempting this one
 		if branchItemInfo.branchId != uint32(index) || branchItemInfo.address == 0 {
 			continue
 		}
 
 		// Verify that the item ID we read from memory is the same as our expectation
 		var itemId uint32
-		err = ReadProcessValue(handle, branchItemInfo.address, &itemId)
+		err = ReadProcessSimpleValue(handle, branchItemInfo.address, &itemId)
 		if err != nil || itemId != SEARCH_ITEM_ID {
 			continue
 		}
 
 		// Verify that the name we read from memory matches our expectation
 		var nameAddress uint32
-		err = ReadProcessValue(handle, branchItemInfo.address+BRANCH_ITEM_NAME_OFFSET, &nameAddress)
+		err = ReadProcessSimpleValue(handle, branchItemInfo.address+BRANCH_ITEM_NAME_OFFSET, &nameAddress)
 		if err != nil || nameAddress == 0 {
 			continue
 		}
