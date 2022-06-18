@@ -24,6 +24,9 @@ var opts struct {
 }
 
 func main() {
+	fmt.Println("MDBrute for RoM-Bot")
+	fmt.Println("https://github.com/SolarStrike-Software/go-mdbrute\n")
+
 	err := winio.EnableProcessPrivileges([]string{"SeDebugPrivilege"})
 	if err != nil {
 		log.Fatalf("could not elevate process. Reason: %s", err)
@@ -56,7 +59,21 @@ func main() {
 		log.Fatalf("could not open process. Reason: %s", err)
 	}
 
-	addr, err := outwardScan(handle, procId, START_ADDRESS, END_ADDRESS, CHUNK_SIZE)
+	var startAddress uint32
+	var endAddress uint32
+	if opts.StartAddress != 0 {
+		startAddress = opts.StartAddress
+	} else {
+		startAddress = START_ADDRESS
+	}
+
+	if opts.EndAddress != 0 {
+		endAddress = opts.EndAddress
+	} else {
+		endAddress = END_ADDRESS
+	}
+
+	addr, err := outwardScan(handle, procId, startAddress, endAddress, CHUNK_SIZE)
 	if err != nil {
 		log.Fatal(err)
 	}
