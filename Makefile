@@ -7,7 +7,7 @@ BUILD=2022-06-18
 TAGS=-tags forceposix
 LDFLAGS=
 #Stripping the exe causes the file to appear more suspicious, but can be re-enabled with:
-#LDFLAGS=-ldflags "-w -w"
+#LDFLAGS=-ldflags "-s -w"
 
 fetch-go:
 	go mod download
